@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Détecteur de billets</title>
+    <style>
+      body { font-family: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; }
+      .card { max-width: 900px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; }
+      h1 { margin-top: 0; }
+      .row { display: flex; gap: 16px; flex-wrap: wrap; }
+      .col { flex: 1; min-width: 260px; }
+      .btn { background: #111827; color: white; padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer; }
+      .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      th, td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+      pre { background:#0b1021; color:#e5e7eb; padding: 12px; border-radius: 8px; overflow:auto; }
+      .muted { color:#6b7280; font-size: 14px; }
+      .error { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Détecteur de billets</h1>
+      <p class="muted">
+        Importez le training set (avec la colonne <code>is_genuine</code>) et le testing set (avec la colonne <code>id</code>).<br />
+        Caractéristiques utilisées: <code>height_right, margin_low, margin_up, length</code>
+      </p>
+      <form id="form" class="row">
+        <div class="col">
+          <label>Training set (CSV)</label><br />
+          <input type="file" id="train_csv" accept=".csv" required />
+        </div>
+        <div class="col">
+          <label>Testing set (CSV)</label><br />
+          <input type="file" id="test_csv" accept=".csv" required />
+        </div>
+      </form>
+      <div style="margin-top:16px;">
+        <button id="run" class="btn">Lancer la détection</button>
+        <a id="download" class="btn" style="background:#2563eb; display:none;" download="billets_identification.csv">Télécharger le CSV</a>
+      </div>
+      <div id="status" class="muted" style="margin-top:12px;"></div>
+      <div id="error" class="error" style="margin-top:8px;"></div>
+
+      <h2 style="margin-top:24px;">Résumé</h2>
+      <pre id="summary">—</pre>
+
+      <h2>Résultats</h2>
+      <div id="table-wrap">—</div>
+    </div>
+
+    <script>
+      const runBtn = document.getElementById('run');
+      const downloadLink = document.getElementById('download');
+      const statusEl = document.getElementById('status');
+      const errorEl = document.getElementById('error');
+      const summaryEl = document.getElementById('summary');
+      const tableWrap = document.getElementById('table-wrap');
+
+      async function onRun() {
+        errorEl.textContent = '';
+        statusEl.textContent = 'Traitement en cours...';
+        runBtn.disabled = true;
+        downloadLink.style.display = 'none';
+        summaryEl.textContent = '—';
+        tableWrap.textContent = '—';
+
+        const train = document.getElementById('train_csv').files[0];
+        const test = document.getElementById('test_csv').files[0];
+        if (!train || !test) {
+          errorEl.textContent = 'Veuillez fournir les deux fichiers CSV.';
+          statusEl.textContent = '';
+          runBtn.disabled = false;
+          return;
+        }
+
+        const fd = new FormData();
+        fd.append('train_csv', train);
+        fd.append('test_csv', test);
+
+        try {
+          const res = await fetch('/detect', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+
+          // Texte
+          summaryEl.textContent = data.text || '—';
+
+          // Tableau
+          const rows = data.table || [];
+          if (rows.length) {
+            const headers = Object.keys(rows[0]);
+            const thead = '<thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead>';
+            const tbody = '<tbody>' + rows.map(r => '<tr>' + headers.map(h => `<td>${r[h]}</td>`).join('') + '</tr>').join('') + '</tbody>';
+            tableWrap.innerHTML = `<table>${thead}${tbody}</table>`;
+          } else {
+            tableWrap.textContent = '—';
+          }
+
+          // Download
+          if (data.csv) {
+            const blob = new Blob([data.csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            downloadLink.href = url;
+            downloadLink.style.display = 'inline-block';
+          }
+          statusEl.textContent = 'Terminé';
+        } catch (e) {
+          errorEl.textContent = String(e.message || e);
+          statusEl.textContent = '';
+        } finally {
+          runBtn.disabled = false;
+        }
+      }
+      runBtn.addEventListener('click', onRun);
+    </script>
+  </body>
+  </html>
+
+
